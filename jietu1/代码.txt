@@ -1,0 +1,123 @@
+mariadb主从配置代码
+change  master  to  master_host='192.168.37.141',   主服务器(master)的IP地址
+
+
+master_user='yjs',                                  主服务器上授权复制的用户名
+
+master_password='123',                              主服务器上授权用户的密码
+
+master_log_file='master-bin.000002',                主服务器上的日志文件     master_log_pos=245;                                 主服务器上的日志偏移位置
+
+master_log_pos=245
+
+2个动态项目负载均衡
+
+    upstream myweb{
+	server 192.168.37.132:80;
+	server 192.168.37.133:80;
+}
+
+
+location / {
+            proxy_pass http://myweb; 	
+	        proxy_set_header Host $http_host; 	
+            proxy_set_header X-Real-IP $remote_addr; 	
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;  	
+
+            proxy_connect_timeout 60; 	
+	        proxy_send_timeout 60; 	
+	        proxy_read_timeout 60;
+        }
+
+
+
+! Configuration File for keepalived
+global_defs {
+router_id directory1 #辅助改为directory2
+}
+vrrp_instance VI_1 {
+state MASTER #定义主还是备
+interface ens33 #VIP绑定接口
+virtual_router_id 80 #整个集群的调度器一致
+priority 100 #back改为50
+advert_int 1
+authentication {
+auth_type PASS
+auth_pass 1111
+}
+virtual_ipaddress {
+192.168.37.160/24
+}
+}
+
+openssl genrsa > my.key 私钥
+openssl req -new -x509 -key my.key -out my.crt 公钥
+
+server {
+        listen       443 ssl;
+        server_name  localhost;
+
+        ssl_certificate      ssl/my.crt;
+        ssl_certificate_key  ssl/my.key;
+
+        ssl_session_cache    shared:SSL:1m;
+        ssl_session_timeout  5m;
+
+        ssl_ciphers  HIGH:!aNULL:!MD5;
+        ssl_prefer_server_ciphers  on;
+
+        location / {
+            root   /pear;
+            index  index.php index.html index.htm;
+        }
+
+	location ~ \.php$ {
+            root           /pear;
+            fastcgi_pass   127.0.0.1:9000;
+            fastcgi_index  index.php;
+            fastcgi_param  SCRIPT_FILENAME  $document_root$fastcgi_script_name;
+            include        fastcgi_params;
+        }
+
+    }
+
+
+[zabbix]
+name = Zabbix Official Repository - $basearch
+baseurl = https://mirrors.tuna.tsinghua.edu.cn/zabbix/zabbix/4.2/rhel/7/$basearch/
+enabled = 1
+gpgcheck = 0
+
+
+create database zabbix character set utf8 collate utf8_bin;
+grant all privileges on zabbix.* to zabbix@localhost identified by '123';
+
+
+zcat /usr/share/doc/zabbix-server-mysql-4.2.8/create.sql.gz | mysql -uzabbix -p123 zabbix
+
+vim /etc/zabbix/zabbix_server.conf
+
+yum install -y zabbix-server-mysql zabbix-web-mysql zabbix-agent
+
+systemctl start zabbix-server.service zabbix-agent.service
+
+yum install -y postfix mailx
+
+loadbalancer.conf
+<VirtualHost *:8080>
+    ServerName myloadbalancer.example.com
+
+    <Proxy balancer://mycluster>
+        BalancerMember http://192.168.37.141:80
+        BalancerMember http://192.168.37.142:80
+    </Proxy>
+
+    ProxyPass / balancer://mycluster/
+    ProxyPassReverse / balancer://mycluster/
+</VirtualHost>
+
+http://192.168.37.140/zabbix/zabbix.php?action=dashboard.view
+http://192.168.37.140/zabbix/index.php
+
+
+ 
